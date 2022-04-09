@@ -7,7 +7,7 @@ terraform {
   }
 
   cloud {
-    organization = "robot-cleaner"
+    organization = "app-name"
 
     workspaces {
       name = "test-workspace"
@@ -134,7 +134,7 @@ data "aws_ami" "latest-amazon-linux-image" {
 }
 
 resource "aws_key_pair" "ssh-key" {
-  key_name = "server-key"
+  key_name = "server-key-pair"
   public_key = file("id_rsa.pub")
 }
 
