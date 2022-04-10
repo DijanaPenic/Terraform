@@ -39,7 +39,7 @@ data "aws_ami" "latest-amazon-linux-image" {
 
 resource "aws_key_pair" "ssh-key" {
   key_name = "server-key-pair"
-  public_key = file("id_rsa.pub")
+  public_key = file(var.ssh_key_public)
 }
 
 resource "aws_instance" "myapp-server" {
@@ -56,4 +56,14 @@ resource "aws_instance" "myapp-server" {
   tags = {
     "Name" = "${var.app_name}-${var.env_prefix}-server"
   }
+}
+
+resource "null_resource" "configure_server" {
+  triggers = {
+    trigger = aws_instance.myapp-server.public_ip
+  }
+  provisioner "local-exec" {
+    working_dir = var.ansible_path
+    command = "ansible-playbook --inventory ${aws_instance.myapp-server.public_ip}, --private-key ${var.ssh_key_private} --user ec2-user setup-docker-ec2-user.yml"
+  } 
 }

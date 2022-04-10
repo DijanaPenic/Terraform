@@ -38,3 +38,18 @@ variable "image_name" {
   description = "image name"
   type = string
 }
+
+variable "ssh_key_private" {
+  description = "ssh private key path"
+  type = string
+}
+
+variable "ssh_key_public" {
+  description = "ssh public key path"
+  type = string
+}
+
+variable "ansible_path" {
+  description = "ansible directory path"
+  type = string
+}

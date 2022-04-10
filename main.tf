@@ -17,7 +17,9 @@ terraform {
   required_version = ">= 1.1.0"
 }
 
-provider "aws" { }
+provider "aws" { 
+  region = "eu-central-1"
+}
 
 resource "aws_vpc" "myapp-vpc" {
   cidr_block = var.vpc_cider_block
@@ -46,4 +48,7 @@ module "myapp-server" {
   subnet_id = module.myapp-subnet.subnet.id
   availability_zone = var.availability_zone
   app_name = var.app_name
+  ssh_key_private = var.ssh_key_private
+  ssh_key_public = var.ssh_key_public
+  ansible_path = var.ansible_path
 }

@@ -29,11 +29,6 @@ variable "instance_type" {
   type = string
 }
 
-# variable "public_key_location" {
-#   description = "SSH public key location"
-#   type = string
-# }
-
 variable "app_name" {
   description = "application name"
   type = string
@@ -41,5 +36,20 @@ variable "app_name" {
 
 variable "image_name" {
   description = "image name"
+  type = string
+}
+
+variable "ssh_key_private" {
+  description = "ssh private key path"
+  type = string
+}
+
+variable "ssh_key_public" {
+  description = "ssh public key path"
+  type = string
+}
+
+variable "ansible_path" {
+  description = "ansible directory path"
   type = string
 }
