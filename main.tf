@@ -23,6 +23,7 @@ provider "aws" {
 
 resource "aws_vpc" "myapp-vpc" {
   cidr_block = var.vpc_cider_block
+  enable_dns_hostnames = true
   tags = {
     Name: "${var.app_name}-${var.env_prefix}-vpc"
   }
