@@ -507,11 +507,25 @@ resource "aws_codebuild_project" "myapp-build-project" {
     }
   }
 
-  source_version = "ecs"
-
   vpc_config {
     vpc_id             = aws_vpc.myapp-vpc.id
     subnets            = local.private_subnets
     security_group_ids = [aws_vpc.myapp-vpc.default_security_group_id]
+  }
+}
+
+resource "aws_codebuild_webhook" "myapp-build-webhook" {
+  project_name = aws_codebuild_project.myapp-build-project.name
+  build_type   = "BUILD"
+  filter_group {
+    filter {
+      type    = "EVENT"
+      pattern = "PUSH"
+    }
+
+    filter {
+      type    = "HEAD_REF"
+      pattern = "main"
+    }
   }
 }
