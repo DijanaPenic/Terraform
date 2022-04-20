@@ -34,14 +34,19 @@ variable "db_password" {
   sensitive   = true
 }
 
-variable "github_token" {
-  description = "Github access token"
+# variable "github_token" {
+#   description = "Github access token"
+#   type        = string
+#   sensitive   = true
+# }
+
+variable "github_project" {
+  description = "Github project"
   type        = string
-  sensitive   = true
 }
 
-variable "github_project_url" {
-  description = "Github project url"
+variable "github_branch" {
+  description = "Github project branch"
   type        = string
 }
 

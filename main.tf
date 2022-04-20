@@ -138,6 +138,32 @@ resource "aws_route" "myapp-subnets-private-rtable" {
   nat_gateway_id         = element(aws_nat_gateway.myapp-nat-gateway.*.id, count.index)
 }
 
+# Security group for load balancer
+resource "aws_security_group" "myapp-lb-sg" {
+  name        = "${var.app_name}-${var.env_prefix}-lb-sg"
+  description = "ECS lb sg"
+  vpc_id      = aws_vpc.myapp-vpc.id
+
+  ingress { 
+    from_port   = 5000
+    to_port     = 5000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress { 
+    from_port       = 0
+    to_port         = 0
+    protocol        = "-1"
+    cidr_blocks     = ["0.0.0.0/0"]
+    prefix_list_ids = []
+  }
+
+  tags = {
+    Name = "${var.app_name}-${var.env_prefix}-lb-sg"
+  }
+}
+
 # Security group for ECS service
 resource "aws_security_group" "myapp-service-sg" {
   name        = "${var.app_name}-${var.env_prefix}-service-sg"
@@ -162,32 +188,6 @@ resource "aws_security_group" "myapp-service-sg" {
 
   tags = {
     Name = "${var.app_name}-${var.env_prefix}-service-sg"
-  }
-}
-
-# Security group for load balancer
-resource "aws_security_group" "myapp-lb-sg" {
-  name        = "${var.app_name}-${var.env_prefix}-lb-sg"
-  description = "ECS lb sg"
-  vpc_id      = aws_vpc.myapp-vpc.id
-
-  ingress { 
-    from_port   = 5000
-    to_port     = 5000
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress { 
-    from_port       = 0
-    to_port         = 0
-    protocol        = "-1"
-    cidr_blocks     = ["0.0.0.0/0"]
-    prefix_list_ids = []
-  }
-
-  tags = {
-    Name = "${var.app_name}-${var.env_prefix}-lb-sg"
   }
 }
 
@@ -318,6 +318,10 @@ resource "aws_lb_target_group" "myapp-target-group" {
   protocol    = "HTTP"
   target_type = "ip"
   vpc_id      = aws_vpc.myapp-vpc.id
+
+  health_check {
+    matcher = "200,302"
+  }
 }
 
 resource "aws_lb" "myapp-lb" {
@@ -381,7 +385,6 @@ resource "aws_iam_role" "myapp-build-role" {
 EOF
 }
 
-// TODO - check subnets.
 resource "aws_iam_role_policy" "myapp-build-policy" {
   role   = aws_iam_role.myapp-build-role.name
   policy = <<POLICY
@@ -390,13 +393,21 @@ resource "aws_iam_role_policy" "myapp-build-policy" {
   "Statement": [
     {
       "Effect": "Allow",
-      "Resource": [
-        "*"
-      ],
       "Action": [
         "logs:CreateLogGroup",
         "logs:CreateLogStream",
         "logs:PutLogEvents"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect":"Allow",
+      "Action": [
+        "s3:*"
+      ],
+      "Resource": [
+        "${aws_s3_bucket.myapp-codepipeline-s3.arn}",
+        "${aws_s3_bucket.myapp-codepipeline-s3.arn}/*"
       ]
     },
     {
@@ -409,6 +420,28 @@ resource "aws_iam_role_policy" "myapp-build-policy" {
         "ec2:DescribeSubnets",
         "ec2:DescribeSecurityGroups",
         "ec2:DescribeVpcs"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:GetRepositoryPolicy",
+          "ecr:DescribeRepositories",
+          "ecr:ListImages",
+          "ecr:DescribeImages",
+          "ecr:BatchGetImage",
+          "ecr:GetLifecyclePolicy",
+          "ecr:GetLifecyclePolicyPreview",
+          "ecr:ListTagsForResource",
+          "ecr:DescribeImageScanFindings",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage"
       ],
       "Resource": "*"
     },
@@ -433,8 +466,8 @@ resource "aws_iam_role_policy" "myapp-build-policy" {
       "Condition": {
         "StringEquals": {
           "ec2:Subnet": [ 
-            "${aws_subnet.myapp-public-subnets[0].arn}",
-            "${aws_subnet.myapp-public-subnets[1].arn}"
+            "${aws_subnet.myapp-private-subnets[0].arn}",
+            "${aws_subnet.myapp-private-subnets[1].arn}"
           ],
           "ec2:AuthorizedService": "codebuild.amazonaws.com"
         }
@@ -445,11 +478,11 @@ resource "aws_iam_role_policy" "myapp-build-policy" {
 POLICY
 }
 
-resource "aws_codebuild_source_credential" "github-credentials" {
-  auth_type   = "PERSONAL_ACCESS_TOKEN"
-  server_type = "GITHUB"
-  token       = var.github_token
-}
+# resource "aws_codebuild_source_credential" "github-credentials" {
+#   auth_type   = "PERSONAL_ACCESS_TOKEN"
+#   server_type = "GITHUB"
+#   token       = var.github_token
+# }
 
 # Build project
 resource "aws_codebuild_project" "myapp-build-project" {
@@ -458,7 +491,7 @@ resource "aws_codebuild_project" "myapp-build-project" {
   service_role  = aws_iam_role.myapp-build-role.arn
 
   artifacts {
-    type = "NO_ARTIFACTS"
+    type = "CODEPIPELINE"
   }
 
   cache {
@@ -492,19 +525,13 @@ resource "aws_codebuild_project" "myapp-build-project" {
 
   logs_config {
     cloudwatch_logs {
-      group_name  = "log-group"
+      group_name  = "build/${var.app_name}-${var.env_prefix}"
       stream_name = "log-stream"
     }
   }
 
   source {
-    type            = "GITHUB"
-    location        = var.github_project_url
-    git_clone_depth = 1
-
-    git_submodules_config {
-      fetch_submodules = true
-    }
+    type = "CODEPIPELINE"
   }
 
   vpc_config {
@@ -514,18 +541,144 @@ resource "aws_codebuild_project" "myapp-build-project" {
   }
 }
 
-resource "aws_codebuild_webhook" "myapp-build-webhook" {
-  project_name = aws_codebuild_project.myapp-build-project.name
-  build_type   = "BUILD"
-  filter_group {
-    filter {
-      type    = "EVENT"
-      pattern = "PUSH"
-    }
+resource "aws_codepipeline" "myapp-code-pipeline" {
+  name     = "${var.app_name}-${var.env_prefix}-code-pipeline"
+  role_arn = aws_iam_role.myapp-codepipeline-role.arn
 
-    filter {
-      type    = "HEAD_REF"
-      pattern = "main"
+  artifact_store {
+    location = aws_s3_bucket.myapp-codepipeline-s3.bucket
+    type     = "S3"
+  }
+
+  stage {
+    name = "Source"
+
+    action {
+      name             = "Source"
+      category         = "Source"
+      owner            = "AWS"
+      provider         = "CodeStarSourceConnection"
+      version          = "1"
+      output_artifacts = ["source_output"]
+
+      configuration = {
+        ConnectionArn    = aws_codestarconnections_connection.myapp-codepipeline-connection.arn
+        FullRepositoryId = var.github_project
+        BranchName       = var.github_branch
+      }
     }
   }
+
+  stage {
+    name = "Build"
+
+    action {
+      name             = "Build"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      version          = "1"
+      input_artifacts  = ["source_output"]
+      output_artifacts = ["build_output"]
+
+      configuration = {
+        ProjectName = aws_codebuild_project.myapp-build-project.name
+      }
+    }
+  }
+
+  stage {
+    name = "Deploy"
+
+    action {
+      name            = "Deploy"
+      category        = "Deploy"
+      owner           = "AWS"
+      provider        = "ECS"
+      input_artifacts = ["build_output"]
+      version         = "1"
+
+      configuration = {
+        ClusterName = aws_ecs_cluster.myapp-cluster-ecs.name
+        ServiceName = aws_ecs_service.myapp-ecs-service.name
+        FileName = "imagedefinitions.json"
+        DeploymentTimeout = 10
+      }
+    }
+  }
+}
+
+resource "aws_s3_bucket" "myapp-codepipeline-s3" {
+  bucket = "${var.app_name}-${var.env_prefix}-codepipeline-s3"
+}
+
+resource "aws_s3_bucket_acl" "codepipeline-s3-acl" {
+  bucket = aws_s3_bucket.myapp-codepipeline-s3.id
+  acl    = "private"
+}
+
+resource "aws_iam_role" "myapp-codepipeline-role" {
+  name = "${var.app_name}-${var.env_prefix}-codepipeline-role"
+
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": [
+          "codepipeline.amazonaws.com"
+        ]
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+}
+
+// TODO - permissions are not correct - getting ECS permission error
+// "The provided role does not have sufficient permissions to access ECS"
+resource "aws_iam_role_policy" "myapp-codepipeline-policy" {
+  name = "${var.app_name}-${var.env_prefix}-codepipeline-policy"
+  role = aws_iam_role.myapp-codepipeline-role.id
+
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect":"Allow",
+      "Action": [
+        "s3:*"
+      ],
+      "Resource": [
+        "${aws_s3_bucket.myapp-codepipeline-s3.arn}",
+        "${aws_s3_bucket.myapp-codepipeline-s3.arn}/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "codestar-connections:UseConnection"
+      ],
+      "Resource": "${aws_codestarconnections_connection.myapp-codepipeline-connection.arn}"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "codebuild:BatchGetBuilds",
+        "codebuild:StartBuild"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_codestarconnections_connection" "myapp-codepipeline-connection" {
+  name          = "${var.app_name}-${var.env_prefix}-codepipeline-conn"
+  provider_type = "GitHub"
 }
